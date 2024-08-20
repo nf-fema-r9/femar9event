@@ -130,11 +130,7 @@
             font-family: 'Avenir Next', sans-serif;
         }
 
-        #calendar {
-            grid-template-rows: auto repeat(5, 1fr);
-        }
-
-        .Event_Strategic {
+        .event-strategic {
             background-color: yellow; /* Yellow background for strategic days */
         }
 
@@ -151,7 +147,7 @@
             left: 0;
             background: radial-gradient(circle, orange 10%, transparent 10%) 0 0,
                         radial-gradient(circle, orange 10%, transparent 30%) 50px 50px,
-                        yellow; /* Use orange to distinguish the overlay on strategic holidays */
+                        yellow;
             background-size: 100px 100px;
             opacity: 0.6;
         }
@@ -168,7 +164,7 @@
     <div id="calendarHeader">
         <button id="prevMonth">&#171;</button>
         <div>
-            <span> </span><span id="monthYearDisplay"></span>
+            <span id="monthYearDisplay"></span>
         </div>
         <button id="nextMonth">&#187;</button>
         <button onclick="openWin()"> Expand </button>
@@ -179,13 +175,13 @@
         <img src="https://fema.maps.arcgis.com/sharing/rest/content/items/9a22cb991ab1480db480b7a987bcfff7/data" style="width:100%; max-width:600px; height:auto;" alt="Calendar Legend">
     </div>
 
-    <div id="eventModal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="modalTitle" aria-describedby="modalDescription">
+    <div id="eventModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <span class="close" aria-label="Close">×</span>
-                <h3 id="modalTitle">Event Details</h3>
+                <span class="close">×</span>
+                <h3>Event Details</h3>
             </div>
-            <div class="modal-body" id="modalDescription">
+            <div class="modal-body">
                 <p id="eventDetails"></p>
             </div>
             <div class="modal-footer">
@@ -214,17 +210,25 @@
             try {
                 const response = await fetch("https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/FAB_nf/FeatureServer/0/query?where=1%3D1&outFields=*&outSR=4326&f=json");
                 const data = await response.json();
+
+                console.log("Fetched Events:", data); // Debugging: Log fetched data
+
                 return data.features.filter(event => {
                     const eventStartDate = new Date(event.attributes.Start_Date);
                     const eventEndDate = new Date(event.attributes.End_Date);
+
                     return (
+                        // Display events that start within the month or span into the month
                         (eventStartDate.getFullYear() === year && eventStartDate.getMonth() === month) ||
+                        // Display events that end within the month or span into the next month
                         (eventEndDate.getFullYear() === year && eventEndDate.getMonth() === month) ||
+                        // Display events that span across the month
                         (eventStartDate <= new Date(year, month + 1, 0) && eventEndDate >= new Date(year, month, 1))
                     );
                 });
             } catch (error) {
                 console.error("Failed to fetch events:", error);
+                alert("Failed to fetch events. Please check the data source or try again later.");
                 return [];
             }
         }
@@ -236,14 +240,30 @@
             days.forEach(day => {
                 const dayInitial = document.createElement('div');
                 dayInitial.innerText = day;
-                dayInitial.classList.add('day-initial'); // Add a class to the day initials
+                dayInitial.classList.add('day-initial');
                 calendar.appendChild(dayInitial);
             });
         }
 
+        function createEventDetailsHtml(events) {
+            return events.map(event => `
+                <strong>Name:</strong> ${event.attributes.Event_Name} <br><br>
+                <strong>Start Date:</strong> ${new Date(event.attributes.Start_Date).toLocaleDateString()} <br>
+                <strong>End Date:</strong> ${new Date(event.attributes.End_Date).toLocaleDateString()} <br>
+                <strong>Type:</strong> ${event.attributes.Event_Type} <br>
+                <strong>Location:</strong> ${event.attributes.Event_Location__State_Territory} <br>
+                <strong>Organization:</strong> ${event.attributes.FEMA_R9_Division} <br>
+                <strong>Sub-Organization:</strong> ${event.attributes.FEMA_R9_Branch} <br>
+                <strong>Occurrence:</strong> ${event.attributes.Event_Occurrence} <br>
+                <strong>Stakeholders:</strong> ${event.attributes.FEMA_R9_Stakeholders} <br><br>
+                <strong>Description:</strong> ${event.attributes.Notes} <br>
+                <hr>
+            `).join('');
+        }
+
         function updateCalendar(year, month) {
             const calendar = document.getElementById('calendar');
-            calendar.innerHTML = ""; 
+            calendar.innerHTML = "";
 
             addDayInitials();
 
@@ -255,12 +275,14 @@
 
             const today = new Date();
             const daysInMonth = new Date(year, month + 1, 0).getDate();
-            
+
             fetchEventsForMonth(year, month).then(events => {
+                console.log("Filtered Events:", events); // Debugging: Log filtered events
+
                 for (let day = 1; day <= daysInMonth; day++) {
                     const cell = document.createElement('div');
                     cell.innerText = day;
-              
+
                     if (today.getFullYear() === currentYear && today.getMonth() === currentMonth && today.getDate() === day) {
                         cell.classList.add('current-day');
                     }
@@ -268,7 +290,12 @@
                     const eventsOnThisDay = events.filter(event => {
                         const startDate = new Date(event.attributes.Start_Date);
                         const endDate = new Date(event.attributes.End_Date);
-                        return (new Date(year, month, day) >= startDate && new Date(year, month, day) <= endDate);
+
+                        // Check if the current day is within the range of the event
+                        return (
+                            new Date(year, month, day).setHours(0, 0, 0, 0) >= startDate.setHours(0, 0, 0, 0) &&
+                            new Date(year, month, day).setHours(0, 0, 0, 0) <= endDate.setHours(23, 59, 59, 999)
+                        );
                     });
 
                     if (eventsOnThisDay.length) {
@@ -277,7 +304,7 @@
                         const hasStrategicEvent = eventsOnThisDay.some(event => event.attributes.Event_Strategic === "Yes");
 
                         if (hasStrategicEvent) {
-                            cell.classList.add('Event_Strategic');
+                            cell.classList.add('event-strategic');
                         }
 
                         if (isHoliday && !isOtherEvent) {
@@ -295,28 +322,8 @@
                         cell.addEventListener('click', function () {
                             const eventModal = document.getElementById('eventModal');
                             const eventDetails = document.getElementById('eventDetails');
-                            
-                            let detailsHtml = '';
-                            eventsOnThisDay.forEach(event => {
-                                detailsHtml += `
-                                    <strong>Name:</strong> ${event.attributes.Event_Name} <br><br>
-                                    <strong>Start Date:</strong> ${new Date(event.attributes.Start_Date).toLocaleDateString()} <br>
-                                    <strong>End Date:</strong> ${new Date(event.attributes.End_Date).toLocaleDateString()} <br>
-                                    <strong>Type:</strong> ${event.attributes.Event_Type} <br>
-                                    <strong>Location:</strong> ${event.attributes.Event_Location__State_Territory} <br>
-                                    <strong>Organization:</strong> ${event.attributes.FEMA_R9_Division} <br>
-                                    <strong>Sub-Organization:</strong> ${event.attributes.FEMA_R9_Branch} <br>
-                                    <strong>Occurrence:</strong> ${event.attributes.Event_Occurrence} <br>
-                                    <strong>Stakeholders:</strong> ${event.attributes.FEMA_R9_Stakeholders} <br> <br>
-                                    <strong>Description:</strong> ${event.attributes.Notes} <br>
-                                    <hr> 
-                                `;
-                            });
-
-                            eventDetails.innerHTML = detailsHtml;
+                            eventDetails.innerHTML = createEventDetailsHtml(eventsOnThisDay);
                             eventModal.style.display = "block";
-                            eventModal.setAttribute('aria-hidden', 'false');
-                            document.querySelector('.close').focus();
                         });
                     }
                     calendar.appendChild(cell);
@@ -348,13 +355,10 @@
         const closeBtn = document.querySelector(".close");
         closeBtn.onclick = function () {
             modal.style.display = "none";
-            modal.setAttribute('aria-hidden', 'true');
-            document.getElementById('nextMonth').focus();
         }
         window.onclick = function (event) {
             if (event.target === modal) {
                 modal.style.display = "none";
-                modal.setAttribute('aria-hidden', 'true');
             }
         }
 
